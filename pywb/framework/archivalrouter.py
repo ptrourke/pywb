@@ -26,24 +26,48 @@ class ArchivalRouter(object):
     def __call__(self, env):
         request_uri = env['REL_REQUEST_URI']
 
+        def do_request(route, matcher, coll):
+            wbrequest = self.parse_request(route, env, matcher,
+                                           coll, request_uri,
+                                           use_abs_prefix=self.abs_path)
+
+            return route.handler(wbrequest)
+
         for route in self.routes:
             matcher, coll = route.is_handling(request_uri)
             if matcher:
-                wbrequest = self.parse_request(route, env, matcher,
-                                               coll, request_uri,
-                                               use_abs_prefix=self.abs_path)
-
-                return route.handler(wbrequest)
+                if self._maybe_match(coll, request_uri):
+                    break
+                else:
+                    return do_request(route, matcher, coll)
 
         # Default Home Page
         if request_uri in ['/', '/index.html', '/index.htm']:
             return self.render_home_page(env)
 
-        return self.fallback(env, self) if self.fallback else None
+        response = None
+        if self.fallback:
+            response = self.fallback(env, self)
+
+        # check after fallback
+        if not response and matcher and route:
+            response = do_request(route, matcher, coll)
+
+        return response
+
+    def _maybe_match(self, coll, request_uri):
+        if coll != '':
+            return False
+
+        if any(x in request_uri for x in ['http://', 'https://']):
+            return False
+
+        return True
 
     def parse_request(self, route, env, matcher, coll, request_uri,
                       use_abs_prefix=False):
-        matched_str = matcher.group(0)
+
+        matched_str = matcher.group(route.coll_group)
         rel_prefix = env.get('SCRIPT_NAME', '') + '/'
 
         if matched_str:
@@ -88,7 +112,7 @@ class Route(object):
     # match upto next / or ? or end
     SLASH_QUERY_LOOKAHEAD = '(?=/|$|\?)'
 
-    def __init__(self, regex, handler, coll_group=0, config={},
+    def __init__(self, regex, handler, config={},
                  request_class=WbRequest,
                  lookahead=SLASH_QUERY_LOOKAHEAD):
 
@@ -100,17 +124,24 @@ class Route(object):
         self.handler = handler
         self.request_class = request_class
         # collection id from regex group (default 0)
-        self.coll_group = coll_group
+        self.coll_group = config.get('coll_group', 0)
         self.cookie_scope = config.get('cookie_scope')
         self.rewrite_opts = config.get('rewrite_opts', {})
         self._custom_init(config)
 
     def is_handling(self, request_uri):
-        matcher = self.regex.match(request_uri[1:])
+        request_uri = request_uri[1:]
+        matcher = self.regex.match(request_uri)
         if not matcher:
             return None, None
 
         coll = matcher.group(self.coll_group)
+
+        # for empty collection, do extra verification
+        #if coll == '':
+        #    if not WbUrl.is_valid_wburl(request_uri):
+        #        return None, None
+
         return matcher, coll
 
     def apply_filters(self, wbrequest, matcher):

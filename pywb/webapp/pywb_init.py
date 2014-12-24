@@ -170,6 +170,12 @@ def create_wb_router(passed_config={}):
     if template_globals:
         add_env_globals(template_globals)
 
+    # add static routes first
+    static_routes = config.get('static_routes')
+
+    for static_name, static_path in static_routes.iteritems():
+        routes.append(Route(static_name, StaticHandler(static_path)))
+
     for name, value in collections.iteritems():
         if isinstance(value, BaseHandler):
             handler_dict[name] = value
@@ -212,11 +218,6 @@ def create_wb_router(passed_config={}):
 
     if config.get('debug_echo_req', False):
         routes.append(Route('echo_req', DebugEchoHandler()))
-
-    static_routes = config.get('static_routes')
-
-    for static_name, static_path in static_routes.iteritems():
-        routes.append(Route(static_name, StaticHandler(static_path)))
 
     # resolve any cross handler references
     for route in routes:

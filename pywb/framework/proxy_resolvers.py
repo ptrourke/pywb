@@ -3,6 +3,7 @@ from pywb.utils.loaders import extract_client_cookie
 from pywb.utils.statusandheaders import StatusAndHeaders
 from pywb.rewrite.wburl import WbUrl
 
+from basehandlers import WbUrlHandler
 from cache import create_cache
 
 import urlparse
@@ -46,10 +47,13 @@ class BaseCollResolver(object):
             if not route:
                 return None, None, None, None, self.select_coll_response(env)
 
-        # if 'use_default_coll'
+        # if 'use_default_coll', find first WbUrlHandler
         elif self.use_default_coll or len(self.routes) == 1:
-            route = self.routes[0]
-            coll = self.routes[0].path
+            for r in self.routes:
+                if isinstance(r.handler, WbUrlHandler):
+                    route = r
+                    coll = r.path
+                    break
 
         # otherwise, return the appropriate coll selection response
         else:
