@@ -26,9 +26,12 @@ class HTMLRewriterMixin(object):
             'applet':  {'codebase': 'oe_',
                         'archive': 'oe_'},
             'area':    {'href': defmod},
+            'audio':   {'src': 'oe_'},
             'base':    {'href': defmod},
             'blockquote': {'cite': defmod},
             'body':    {'background': 'im_'},
+            'button':  {'formaction': defmod},
+            'command': {'icon': 'im_'},
             'del':     {'cite': defmod},
             'embed':   {'src': 'oe_'},
             'head':    {'': defmod},  # for head rewriting
@@ -36,7 +39,8 @@ class HTMLRewriterMixin(object):
             'img':     {'src': 'im_',
                         'srcset': 'im_'},
             'ins':     {'cite': defmod},
-            'input':   {'src': 'im_'},
+            'input':   {'src': 'im_',
+                        'formaction': defmod},
             'form':    {'action': defmod},
             'frame':   {'src': 'fr_'},
             'link':    {'href': 'oe_'},
@@ -48,6 +52,9 @@ class HTMLRewriterMixin(object):
             'ref':     {'href': 'oe_'},
             'script':  {'src': 'js_'},
             'source':  {'src': 'oe_'},
+            'video':   {'src': 'oe_',
+                        'poster': 'im_'},
+
             'div':     {'data-src': defmod,
                         'data-uri': defmod},
             'li':      {'data-src': defmod,
@@ -161,10 +168,7 @@ class HTMLRewriterMixin(object):
         # attr rewriting
         handler = self.rewrite_tags.get(tag)
         if not handler:
-            handler = self.rewrite_tags.get('')
-
-        if not handler:
-            return False
+            handler = {}
 
         self.out.write('<' + tag)
 

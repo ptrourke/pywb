@@ -19,20 +19,23 @@ This file is part of pywb, https://github.com/ikreymer/pywb
 
 function __WbJsInit() {
 
+var bid = undefined;
+
 
 function init_banner() {
     var PLAIN_BANNER_ID = "_wb_plain_banner";
     var FRAME_BANNER_ID = "_wb_frame_top_banner";
-    var bid;
 
     if (window.top != window.self) {
         return;
     }
 
-    if (wbinfo.is_frame) {
-        bid = FRAME_BANNER_ID;
-    } else {
-        bid = PLAIN_BANNER_ID;
+    if (!bid) {
+        if (wbinfo.is_frame) {
+            bid = FRAME_BANNER_ID;
+        } else {
+            bid = PLAIN_BANNER_ID;
+        }
     }
 
     if (!document || !document.body) {
@@ -43,7 +46,10 @@ function init_banner() {
         return;
     }
 
-    _wb_js.create_banner_element(bid);
+    var res = _wb_js.create_banner_element(bid);
+    if (res) {
+        bid = res;
+    }
 }
 
 this.banner_labels = {LOADING_MSG: "Loading...",
@@ -132,9 +138,12 @@ this.load = function() {
         var hash = window.location.hash;
 
         var loc = window.location.href.replace(window.location.hash, "");
+        loc = decodeURI(loc);
 
         if (wbinfo.top_url && (loc != wbinfo.top_url) && wbinfo.mod != "bn_") {
             // Auto-redirect to top frame
+            console.log(wbinfo.top_url);
+            console.log(loc);
             window.location.replace(wbinfo.top_url + hash);
         } else {
             // Init Banner (no frame or top frame)

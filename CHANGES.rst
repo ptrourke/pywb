@@ -1,7 +1,83 @@
-pywb 0.7.0 changelist
+pywb 0.8.0 changelist
 ~~~~~~~~~~~~~~~~~~~~~
 
-Video/streaming content replay and buffering improvements!
+pywb 0.7.8 changelist
+~~~~~~~~~~~~~~~~~~~~~
+
+* live rewrite fix: When forwarding ``X-Forwarded-Proto`` header, set scheme to actual url scheme to avoid possible redirect loops (#57)
+
+
+pywb 0.7.7 changelist
+~~~~~~~~~~~~~~~~~~~~~
+
+* client-side rewrite: improved rewriting of all style changes using mutation observers
+
+* rules: fix YT rewrite rule, add rule for wikimedia
+
+* cdx-indexer: minor cleanup, add support for custom writer for batched cdx (write_multi_cdx_index)
+
+
+pywb 0.7.6 changelist
+~~~~~~~~~~~~~~~~~~~~~
+
+* new not found Jinja2 template: Add per-collection-overridable ``not_found.html`` template, specified via ``not_found_html`` option. For missing resources, the ``not_found_html`` template is now used instead of the generic ``error_html``
+
+* client-side rewrite: improved wombat rewrite of postMessage events, unrewrite target on receive, improved Vine replay
+
+* packaging: allow adding multiple packages for Jinja2 template resolving
+
+pywb 0.7.5 changelist
+~~~~~~~~~~~~~~~~~~~~~
+
+* Cross platform fixes to support Windows -- all tests pass on Linux, OS X and Windows now. Improved cross-platform support includes:
+
+  - read all files as binary to avoid line ending issues
+  - properly convert between platform dependent file paths and urls
+  - add .gitattributes to ensure line endings on *.warc*, *.arc*, *.cdx* files are unaltered
+  - avoid platform dependent apis (eg. %s for strftime)
+
+* Change any unhandled exceptions to result in a 500 error, instead of 400.
+
+* Setup: switch to ``zip_safe=True`` to allow for embedding pywb egg in one-file app with `pyinstaller <https://github.com/pyinstaller/pyinstaller>`_
+
+* More compresensive client side ``src`` attribute rewriting (via wombat.js), additional server-side HTML tag rewriting.
+
+
+pywb 0.7.2 changelist
+~~~~~~~~~~~~~~~~~~~~~
+
+* Experiment with disabling DASH for YT
+
+* New ``req_cookie_rewrite`` rewrite directive to rewrite outgoing ``Cookie`` header, can be used to fix a certain cookie for a url prefix.
+
+  A list of regex match/replace rules, applied in succession, can be set for each url prefix. See ``rules.yaml`` for more info.
+
+
+pywb 0.7.1 changelist
+~~~~~~~~~~~~~~~~~~~~~
+
+* (0.7.1 fixes some missing static files from 0.7.0 release)
+
+* Video/Audio Replay, Live Proxy and Recording Support (with pywb-webrecorder)!
+
+  See: `Video Replay and Recording <https://github.com/ikreymer/pywb/wiki/Video-Replay-and-Recording>`_ for more detailed info.
+
+* Support for replaying HTTP/1.1 range requests for any archived resorce (optional range cache be disabled via `enable_ranges: false`)
+
+* Support for on-the-fly video replacement of Flash with HTML5 using new video rewrite system ``vidrw.js``.
+
+  (Designed for all Flash videos, with varying levels of special cases for YouTube, Vimeo, Soundcloud and Dailymotion)
+
+* Use `youtube-dl <http://rg3.github.io/youtube-dl/>`_ to find actual video streams from page urls, record video info.
+
+* New, improved wombat 2.1 -- improved rewriting of dynamic content, including:
+
+  - setAttribute override
+  - Date override sets date to replay timestamp
+  - Image() object override
+  - ability to disable dynamic attribute rewriting by setting ``_no_rewrite`` on an element.
+
+* Type detection: resolve conflict between text/html that is served under js_ mod, resolve if html or js.
 
 
 pywb 0.6.6 changelist

@@ -65,7 +65,17 @@ rules:
       fuzzy_lookup: '()'
 
 
-     # flickr rules
+    # wikimedia rules
+    #=================================================================
+    - url_prefix: 'org,wikimedia,meta)/'
+
+      rewrite:
+          js_regexs:
+              - match: '\burl\((\\?/\\?/[^)]+)\)'
+                rewrite: true
+                group: 1
+
+    # flickr rules
     #=================================================================
     - url_prefix: ['com,yimg,l)/g/combo', 'com,yimg,s)/pw/combo', 'com,yahooapis,yui)/combo']
       fuzzy_lookup: '([^/]+(?:\.css|\.js))'
@@ -126,6 +136,14 @@ rules:
           - videoFileId
           - signature
 
+    # vine
+    - url_prefix: 'co,vine,cdn,'
+
+      rewrite:
+        js_rewrite_location: urls
+        js_regexs:
+            - match: 'window.location'
+              replace: 'WB_wombat_location'
 
     # youtube rules
     #=================================================================
@@ -148,12 +166,22 @@ rules:
 
     - url_prefix: 'com,youtube,c'
 
-      fuzzy_lookup: 'com,youtube,c.*/videogoodput.*(id=[^&]+)'
+      fuzzy_lookup:
+          match:
+            regex: 'com,youtube,c.*/videogoodput.*'
+            args:
+                - id
 
     - url_prefix: 'com,googlevideo,'
 
       fuzzy_lookup:
-          match: 'com,googlevideo.*/videoplayback.*(id=[^&]+).*(itag=[^&]+).*(mime=[^&]+)'
+          match:
+            regex: 'com,googlevideo.*/videoplayback.*'
+            args:
+                - id
+                - itag
+                  #- mime
+
           filter:
               - '~urlkey:{0}'
               - '!mimetype:text/plain'
@@ -177,6 +205,24 @@ rules:
           js_rewrite_location: location
 
 
+    # watch and embed config changes
+    - url_prefix: 'com,youtube)/'
+
+      rewrite:
+        js_regexs:
+            - match: 'ytplayer.load\(\);'
+              replace: 'ytplayer.config.args.dash = "0"; ytplayer.config.args.dashmpd = ""; {0}'
+
+            - match: 'yt\.setConfig.*PLAYER_CONFIG.*args":\s*{'
+              replace: '{0} "dash": "0", dashmpd: "", '
+
+        req_cookie_rewrite:
+            - match: '^(((?!PREF).)*)$'
+              replace: '\1; PREF=f2=40000000'
+
+            - match: '(.*PREF=)([^ ;]*)(.*)'
+              replace: '\1&f2=40000000\3'
+
     # testing rules -- not for valid domain
     #=================================================================
     # this rule block is a non-existent prefix merely for testing
@@ -198,6 +244,15 @@ rules:
       rewrite:
         js_rewrite_location: urls
 
+        req_cookie_rewrite:
+            - match: '^(((?!FOO).)*)$'
+              replace: '\1; FOO=bar=1'
+
+            - match: '(.*FOO=)([^ ;]*)(.*)'
+              replace: '\1&bar=1\3'
+
+            - match: ''
+              invalid_: ''
 
       # all domain rules -- fallback to this dataset
     #=================================================================

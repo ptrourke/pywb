@@ -18,7 +18,7 @@ This file is part of pywb, https://github.com/ikreymer/pywb
  */
 
 //============================================
-// Wombat JS-Rewriting Library v2.1
+// Wombat JS-Rewriting Library v2.2
 //============================================
 _WBWombat = (function() {
 
@@ -69,6 +69,16 @@ _WBWombat = (function() {
     }
 
     //============================================
+    function equals_any(string, arr) {
+        for (var i = 0; i < arr.length; i++) {
+            if (string === arr[i]) {
+                return arr[i];
+            }
+        }
+        return undefined;
+    }
+
+    //============================================
     function ends_with(str, suffix) {
         if (str.indexOf(suffix, str.length - suffix.length) !== -1) {
             return suffix;
@@ -104,6 +114,10 @@ _WBWombat = (function() {
         BAD_PREFIXES = ["http:" + prefix, "https:" + prefix,
                         "http:/" + prefix, "https:/" + prefix];
     }
+
+    var SRC_TAGS = ["IMG", "SCRIPT", "VIDEO", "AUDIO", "SOURCE", "EMBED", "INPUT"];
+
+    var REWRITE_ATTRS = ["src", "href", "poster"];
 
     //============================================
     function rewrite_url_(url) {
@@ -156,12 +170,19 @@ _WBWombat = (function() {
             return wb_replay_date_prefix + wb_orig_host + url;
         }
 
-        // If full url starting with http://, add prefix
-
+        // If full url starting with http://, https:// or //
+        // add rewrite prefix
         var prefix = starts_with(url, VALID_PREFIXES);
 
         if (prefix) {
+            // if already rewriting url, must still check scheme
             if (starts_with(url, prefix + window.location.host + '/')) {
+                var curr_scheme = window.location.protocol + '//';
+
+                // replace scheme to ensure using the correct server scheme
+                if (starts_with(url, wb_orig_scheme) && (wb_orig_scheme != curr_scheme)) {
+                    url = curr_scheme + url.substring(wb_orig_scheme.length);
+                }
                 return url;
             }
             return wb_replay_date_prefix + url;
@@ -252,7 +273,11 @@ _WBWombat = (function() {
             });
             return true;
         } catch (e) {
-            console.log(e);
+            var info = "Can't redefine prop " + prop;
+            if (obj && obj.tagName) {
+                info += " on " + obj.tagName;
+            }
+            console.log(info);
             obj[prop] = value;
             return false;
         }
@@ -270,7 +295,10 @@ _WBWombat = (function() {
             return this._orig_loc.replace(rewrite_url(url));
         }
         this.assign = function(url) {
-            return this._orig_loc.assign(rewrite_url(url));
+            var new_url = rewrite_url(url);
+            if (new_url != url) {
+                return this._orig_loc.assign(new_url);
+            }
         }
         this.reload = loc.reload;
 
@@ -478,13 +506,6 @@ _WBWombat = (function() {
                 async = true;
             }
 
-            // extra check for correct scheme here.. maybe move to rewrite_url..
-            var curr_scheme = window.location.protocol + '//';
-
-            if (starts_with(url, wb_orig_scheme) && (wb_orig_scheme != curr_scheme)) {
-                url = curr_scheme + url.substring(wb_orig_scheme.length);
-            }
-
             return orig.call(this, method, url, async, user, password);
         }
 
@@ -505,15 +526,37 @@ _WBWombat = (function() {
         Element.prototype.setAttribute = function(name, value) {
             if (name) {
                 var lowername = name.toLowerCase();
-                if (lowername == "src" || lowername == "href") {
+                if (equals_any(lowername, REWRITE_ATTRS) && typeof(value) == "string") {
                     if (!this._no_rewrite) {
+                        var old_value = value;
                         value = rewrite_url(value);
+                        if (value != old_value) {
+                            this._no_rewrite = true;
+                        }
                     }
                 }
             }
-
             orig_setAttribute.call(this, name, value);
         };
+    }
+
+    //============================================
+    function init_createElementNS_fix()
+    {
+        if (!document.createElementNS ||
+            !Document.prototype.createElementNS) {
+            return;
+        }
+
+        document._orig_createElementNS = document.createElementNS;
+        var createElementNS_fix = function(namespaceURI, qualifiedName)
+        {
+            namespaceURI = extract_orig(namespaceURI);
+            return document._orig_createElementNS(namespaceURI, qualifiedName);
+        }
+
+        Document.prototype.createElementNS = createElementNS_fix;
+        document.createElementNS = createElementNS_fix;
     }
 
     //============================================
@@ -583,6 +626,36 @@ _WBWombat = (function() {
         window.Worker = undefined;
     }
 
+
+    //============================================
+    function init_mutation_obs() {
+        if (!window.MutationObserver) {
+            return;
+        }
+
+        var m = new MutationObserver(function(records, observer)
+        {
+            for (var i = 0; i < records.length; i++) {
+                var r = records[i];
+                if (r.type == "attributes" && r.attributeName == "style") {
+                    var style = r.target.style.cssText;
+                    if (style.indexOf("url(") > 0) {
+                        var new_style = rewrite_style(style);
+                        if (new_style != style) {
+                            r.target.style.cssText = new_style;
+                        }
+                    }
+                }
+            }
+        });
+
+        m.observe(document.documentElement, {childList: false,
+                                  attributes: true,
+                                  subtree: true,
+                                  //attributeOldValue: true,
+                                  attributeFilter: ["style"]});
+    }
+
     //============================================
     function rewrite_attr(elem, name, func) {
         if (!elem || !elem.getAttribute) {
@@ -610,8 +683,6 @@ _WBWombat = (function() {
     //============================================
     function rewrite_style(value)
     {
-        //console.log("style rewrite: " + value);
-
         STYLE_REGEX = /(url\s*\(\s*[\\"']*)([^)'"]+)([\\"']*\s*\))/g;
 
         function style_replacer(match, n1, n2, n3, offset, string) {
@@ -692,12 +763,9 @@ _WBWombat = (function() {
                     }
 
                     override_attr(created, "src");
-                } else if (created.tagName == "IMG" || created.tagName == "VIDEO" || created.tagName == "AUDIO") {
+                } else if (created.tagName && equals_any(created.tagName, SRC_TAGS)) {
                     override_attr(created, "src");
                 }
-//                } else if (created.tagName == "A") {
-//                    override_attr(created, "href");
-//                }
 
                 return created;
             }
@@ -711,13 +779,15 @@ _WBWombat = (function() {
     //============================================
     function init_postmessage_override()
     {
-        if (!Window.prototype.postMessage) {
+        if (!window.postMessage) {
             return;
         }
 
-        var orig = Window.prototype.postMessage;
+        var orig = window.postMessage;
 
         var postmessage_rewritten = function(message, targetOrigin, transfer) {
+            message = {"origin": targetOrigin, "message": message};
+
             if (targetOrigin && targetOrigin != "*") {
                 targetOrigin = window.location.origin;
             }
@@ -726,7 +796,10 @@ _WBWombat = (function() {
         }
 
         window.postMessage = postmessage_rewritten;
-        window.Window.prototype.postMessage = postmessage_rewritten;
+
+        if (Window.prototype.postMessage) {
+            window.Window.prototype.postMessage = postmessage_rewritten;
+        }
 
         for (var i = 0; i < window.frames.length; i++) {
             try {
@@ -734,6 +807,30 @@ _WBWombat = (function() {
             } catch (e) {
                 console.log(e);
             }
+        }
+
+
+        window._orig_addEventListener = window.addEventListener;
+
+        window.addEventListener = function(type, listener, useCapture) {
+            if (type == "message") {
+                var orig_listener = listener;
+                listener = function(event) {
+
+                    var ne = new MessageEvent("message",
+                                    {"bubbles": event.bubbles,
+                                     "cancelable": event.cancelable,
+                                     "data": event.data.message,
+                                     "origin": event.data.origin,
+                                     "lastEventId": event.lastEventId,
+                                     "source": event.source,
+                                     "ports": event.ports});
+
+                    return orig_listener(ne);
+                }
+            }
+
+            return window._orig_addEventListener(type, listener, useCapture);
         }
     }
 
@@ -792,14 +889,30 @@ _WBWombat = (function() {
     //============================================
     function init_write_override()
     {
+        var orig_doc_write = document.write;
+
         document.write = function(string) {
             var doc = new DOMParser().parseFromString(string, "text/html");
 
             if (doc) {
-                var children = doc.body.children;
 
-                for (var i = 0; i < children.length; i++) {
-                    document.body.appendChild(children[i]);
+                if (doc.head && document.head) {
+                    var children = doc.head.children;
+
+                    for (var i = 0; i < children.length; i++) {
+                        //document.head.appendChild(children[i]);
+                        // in head, must call original write to ensure same execution order..
+                        rewrite_elem(children[i]);
+                        orig_doc_write.call(this, children[i].outerHTML);
+                    }
+                }
+
+                if (doc.body && document.body) {
+                    var children = doc.body.children;
+
+                    for (var i = 0; i < children.length; i++) {
+                        document.body.appendChild(children[i]);
+                    }
                 }
             }
         }
@@ -867,6 +980,10 @@ _WBWombat = (function() {
 
                 window.WB_wombat_top = find_next_top(window.self);
 
+                if (window.parent == window.top) {
+                    window.parent = window;
+                }
+
             } else {
                 window.top.WB_wombat_location = new WombatLocation(window.top.location);
                 window.WB_wombat_top = window.top;
@@ -882,6 +999,7 @@ _WBWombat = (function() {
         // Domain
         document.WB_wombat_domain = orig_host;
         document.WB_wombat_referrer = extract_orig(document.referrer);
+
 
         // History
         copy_history_func(window.history, 'pushState');
@@ -900,8 +1018,14 @@ _WBWombat = (function() {
         init_ajax_rewrite();
         init_worker_override();
 
+        // Init mutation observer (for style only)
+        init_mutation_obs();
+
         // setAttribute
         init_setAttribute_override();
+
+        // ensure namespace urls are NOT rewritten
+        init_createElementNS_fix();
 
         // Image
         init_image_override();

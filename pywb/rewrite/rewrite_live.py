@@ -6,10 +6,11 @@ import requests
 import datetime
 import mimetypes
 import logging
+import os
 
 from urlparse import urlsplit
 
-from pywb.utils.loaders import is_http, LimitReader, BlockLoader
+from pywb.utils.loaders import is_http, LimitReader, BlockLoader, to_file_url
 from pywb.utils.loaders import extract_client_cookie
 from pywb.utils.timeutils import datetime_to_timestamp
 from pywb.utils.statusandheaders import StatusAndHeaders
@@ -50,10 +51,11 @@ class LiveRewriter(object):
 
         return (status_headers, stream)
 
-    def translate_headers(self, url, env):
+    def translate_headers(self, url, urlkey, env):
         headers = {}
 
         splits = urlsplit(url)
+        has_cookies = False
 
         for name, value in env.iteritems():
             if name == 'HTTP_HOST':
@@ -73,6 +75,15 @@ class LiveRewriter(object):
             elif name == 'HTTP_REFERER':
                 continue
 
+            elif name == 'HTTP_X_FORWARDED_PROTO':
+                name = 'X-Forwarded-Proto'
+                value = splits.scheme
+
+            elif name == 'HTTP_COOKIE':
+                name = 'Cookie'
+                value = self._req_cookie_rewrite(urlkey, value)
+                has_cookies = True
+
             elif name.startswith('HTTP_'):
                 name = name[5:].title().replace('_', '-')
 
@@ -82,14 +93,33 @@ class LiveRewriter(object):
             elif name == 'REL_REFERER':
                 name = 'Referer'
             else:
-                continue
+                value = None
 
             if value:
                 headers[name] = value
 
+        if not has_cookies:
+            value = self._req_cookie_rewrite(urlkey, '')
+            if value:
+                headers['Cookie'] = value
+
         return headers
 
+    def _req_cookie_rewrite(self, urlkey, value):
+        rule = self.rewriter.ruleset.get_first_match(urlkey)
+        if not rule or not rule.req_cookie_rewrite:
+            return value
+
+        for cr in rule.req_cookie_rewrite:
+            try:
+                value = cr['rx'].sub(cr['replace'], value)
+            except KeyError:
+                pass
+
+        return value
+
     def fetch_http(self, url,
+                   urlkey=None,
                    env=None,
                    req_headers=None,
                    follow_redirects=False,
@@ -109,7 +139,7 @@ class LiveRewriter(object):
             method = env['REQUEST_METHOD'].upper()
             input_ = env['wsgi.input']
 
-            req_headers.update(self.translate_headers(url, env))
+            req_headers.update(self.translate_headers(url, urlkey, env))
 
             if method in ('POST', 'PUT'):
                 len_ = env.get('CONTENT_LENGTH')
@@ -156,15 +186,23 @@ class LiveRewriter(object):
             url = 'http:' + url
 
         if is_http(url):
-            (status_headers, stream) = self.fetch_http(url, env, req_headers,
-                                                       follow_redirects,
-                                                       ignore_proxies)
+            is_remote = True
         else:
-            (status_headers, stream) = self.fetch_local_file(url)
+            is_remote = False
+            if not url.startswith('file:'):
+                url = to_file_url(url)
 
         # explicit urlkey may be passed in (say for testing)
         if not urlkey:
             urlkey = canonicalize(url)
+
+        if is_remote:
+            (status_headers, stream) = self.fetch_http(url, urlkey, env,
+                                                       req_headers,
+                                                       follow_redirects,
+                                                       ignore_proxies)
+        else:
+            (status_headers, stream) = self.fetch_local_file(url)
 
         if timestamp is None:
             timestamp = datetime_to_timestamp(datetime.datetime.utcnow())

@@ -1,8 +1,9 @@
-from pywb.utils.timeutils import timestamp_to_datetime
+from pywb.utils.timeutils import timestamp_to_datetime, timestamp_to_sec
 from pywb.framework.wbrequestresponse import WbResponse
 from pywb.framework.memento import make_timemap, LINK_FORMAT
 
 import urlparse
+import urllib
 import logging
 
 from os import path
@@ -22,11 +23,7 @@ class template_filter(object):
     Otherwise, the func name is the filter name
     """
     def __init__(self, param=None):
-        if hasattr(param, '__call__'):
-            self.name = None
-            self.__call__(param)
-        else:
-            self.name = param
+        self.name = param
 
     def __call__(self, func):
         name = self.name
@@ -39,10 +36,13 @@ class template_filter(object):
 
 #=================================================================
 # Filters
-@template_filter
+@template_filter()
 def format_ts(value, format_='%a, %b %d %Y %H:%M:%S'):
-    value = timestamp_to_datetime(value)
-    return value.strftime(format_)
+    if format_ == '%s':
+        return timestamp_to_sec(value)
+    else:
+        value = timestamp_to_datetime(value)
+        return value.strftime(format_)
 
 
 @template_filter('urlsplit')
@@ -52,23 +52,17 @@ def get_urlsplit(url):
 
 
 @template_filter()
-def request_hostname(env):
-    return env.get('HTTP_HOST', 'localhost')
-
-
-@template_filter()
 def is_wb_handler(obj):
     if not hasattr(obj, 'handler'):
         return False
 
-    #return isinstance(obj.handler, WBHandler)
     return obj.handler.__class__.__name__ == "WBHandler"
 
 
 #=================================================================
 class J2TemplateView(object):
     env_globals = {'static_path': 'static/default',
-                   'package': 'pywb'}
+                   'packages': ['pywb']}
 
     def __init__(self, filename):
         template_dir, template_file = path.split(filename)
@@ -91,8 +85,11 @@ class J2TemplateView(object):
         # add relative and absolute path loaders for banner support
         loaders.append(FileSystemLoader('.'))
         loaders.append(FileSystemLoader('/'))
-        loaders.append(PackageLoader(self.env_globals['package'],
-                                     template_dir))
+
+        # add loaders for all specified packages
+        for package in self.env_globals['packages']:
+            loaders.append(PackageLoader(package,
+                                         template_dir))
         return loaders
 
     def render_to_string(self, **kwargs):
@@ -132,12 +129,16 @@ class HeadInsertView(J2TemplateView):
     def create_insert_func(self, wbrequest,
                            include_ts=True):
 
+        url = wbrequest.get_url()
+
         top_url = wbrequest.wb_prefix
-        top_url += wbrequest.wb_url.to_str(mod=wbrequest.final_mod)
+        top_url += wbrequest.wb_url.to_str(mod=wbrequest.final_mod, url='')
+        top_url += url
 
         include_wombat = not wbrequest.wb_url.is_banner_only
 
         def make_head_insert(rule, cdx):
+            cdx['url'] = url
             return (self.render_to_string(wbrequest=wbrequest,
                                           cdx=cdx,
                                           top_url=top_url,
@@ -169,9 +170,14 @@ class HeadInsertView(J2TemplateView):
 #=================================================================
 class J2HtmlCapturesView(J2TemplateView):
     def render_response(self, wbrequest, cdx_lines, **kwargs):
+        def format_cdx_lines():
+            for cdx in cdx_lines:
+                cdx['url'] = wbrequest.get_url(url=cdx['original'])
+                yield cdx
+
         return J2TemplateView.render_response(self,
-                                    cdx_lines=list(cdx_lines),
-                                    url=wbrequest.wb_url.url,
+                                    cdx_lines=list(format_cdx_lines()),
+                                    url=wbrequest.get_url(),
                                     type=wbrequest.wb_url.type,
                                     prefix=wbrequest.wb_prefix,
                                     **kwargs)

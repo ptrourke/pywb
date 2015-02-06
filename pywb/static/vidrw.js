@@ -18,26 +18,40 @@ This file is part of pywb, https://github.com/ikreymer/pywb
 */
 
 // VidRw 1.0 -- video rewriting
+//
+//
+
+var _pywbvid = "default";
+
+var _pywb_yt_err = undefined;
+
+if (window.location.hash) {
+    var m = window.location.hash.match(/_pywbvid=([\w]+)/);
+    if (m) {
+        _pywbvid = m[1];
+    }
+
+    if (_pywbvid == "html" || _pywbvid == "flash") {
+        var YT_W_E_RX = /^(https?:\/\/.*youtube.com)\/(watch|embed).*$/;
+
+        if (wbinfo.url.match(YT_W_E_RX)) {
+            // special case: prevent yt player from being inited
+            Object.defineProperty(window, 'yt', {writeable: false});
+            Object.defineProperty(window, 'ytplayer', {writeable: false});
+        }
+    }
+}
+
 
 __wbvidrw = (function() {
 
     var found_embeds = false;
-
-    var vid_type = "html";
 
     var FLASH_PLAYER = wbinfo.static_prefix + "/flowplayer/flowplayer-3.2.18.swf";
 
     function check_videos() {
         if (found_embeds) {
             return;
-        }
-
-        // extract_typ
-        if (window.location.hash) {
-            var m = window.location.hash.match(/_pywbvid=([\w]+)/);
-            if (m) {
-                vid_type = m[1];
-            }
         }
 
         function handle_all_embeds() {
@@ -61,31 +75,11 @@ __wbvidrw = (function() {
 
         found_embeds = true;
 
-        //window.setInterval(handle_all_embeds, 1000);
+        handle_yt_videos(_pywbvid);
 
+        //window.setInterval(handle_all_embeds, 2000);
         //_wb_wombat.add_tag_handler("embed", handle_all_embeds);
         //_wb_wombat.add_tag_handler("object", handle_all_objects);
-
-        // special case: yt
-        /*
-        if (!found_embeds && wbinfo.url.indexOf("://www.youtube.com/watch") > 0) {
-            var ytvideo = document.getElementsByTagName("video");
-
-            if (ytvideo.length == 1) {
-                if (ytvideo[0].getAttribute("data-youtube-id") != "") {
-                    // Wait to see if video is playing, if so, don't replace it
-                    window.setTimeout(function() {
-                        if (!ytvideo || !ytvideo.length || ytvideo[0].readyState == 0) {
-                            delete window.yt;
-                            delete window.ytplayer;
-                            console.log("REPLACING YT: " + wbinfo.url);
-                            check_replacement(ytvideo[0], wbinfo.url);
-                        }
-                    }, 4000);
-                }
-            }
-        }
-        */
     }
 
     function handle_embed_tag(elem)
@@ -119,8 +113,8 @@ __wbvidrw = (function() {
             return false;
         }
 
-        for (var j = 0; j < objects[i].children.length; j++) {
-            var child = objects[i].children[j];
+        for (var j = 0; j < elem.children.length; j++) {
+            var child = elem.children[j];
 
             if (child.tagName == "EMBED") {
                 return false;
@@ -144,17 +138,102 @@ __wbvidrw = (function() {
 
             elem._vidrw = true;
 
-            check_replacement(elem, src);
+            check_replacement(elem, obj_url);
             return true;
         }
 
         return false;
     }
 
-    var YT_RX = /^(https?:\/\/.*youtube.com)\/v\/([^&?]+)(.*)$/;
-
+    var YT_W_E_RX = /^(https?:\/\/.*youtube.com)\/(watch|embed).*$/;
+    var YT_V_RX = /^(https?:\/\/.*youtube.com)\/v\/([^&?]+)(.*)$/;
     var VIMEO_RX = /^https?:\/\/.*vimeo.*clip_id=([^&]+)/;
 
+    function remove_yt()
+    {
+        // yt special case
+        if (window.yt && window.yt.player && window.yt.player.getPlayerByElement) {
+            //yt.player.Application.create("player-api", ytplayer.config).dispose();
+
+            var elem = window.yt.player.getPlayerByElement("player-api");
+
+            if (!elem) {
+                elem = window.yt.player.getPlayerByElement("player");
+            }
+
+            if (elem) {
+                elem.destroy();
+            }
+
+            delete window.yt;
+            if (window.ytplayer) {
+                delete window.ytplayer;
+            }
+        }
+        // end yt special case
+    }
+
+    function handle_yt_videos(_pywbvid)
+    {
+        function do_yt_video_replace(elem)
+        {
+            remove_yt();
+
+            while (elem.hasChildNodes()) {
+                elem.removeChild(elem.lastChild);
+            }
+
+            //add placeholder child to remove
+            var placeholder = document.createElement("div");
+            elem.appendChild(placeholder);
+            check_replacement(placeholder, wbinfo.url);
+        }
+
+        // special case: yt
+        if (wbinfo.url.match(YT_W_E_RX)) {
+            //var ytvideo = document.getElementsByTagName("video");
+            var player_div = document.getElementById("player-api");
+            if (!player_div) {
+                player_div = document.getElementById("player");
+            }
+
+            //if (ytvideo.length == 1 && ytvideo[0].getAttribute("data-youtube-id") != "") {
+            if (player_div) {
+                if (_pywbvid == "html" || _pywbvid == "flash") {
+                    do_yt_video_replace(player_div);
+                } else if (!wbinfo.is_live) {
+                    var player = window.yt.player.getPlayerByElement(player_div);
+
+                    if (player) {
+                        _pywb_yt_err = function() {
+                            do_yt_video_replace(player_div);
+                        }
+
+                        player.addEventListener("onError", "_pywb_yt_err");
+                    }
+
+                    setTimeout(function() {
+                        if (!window.yt || !window.yt.player) {
+                            do_yt_video_replace(player_div);
+                            return;
+                        }
+
+                        var state = -1;
+
+                        if (player && player.getPlayerState) {
+                           state = player.getPlayerState();
+                        }
+
+                        // if no player or player is still buffering (is this ok), then replace
+                        if (state < 0) {
+                            do_yt_video_replace(player_div);
+                            return;
+                        }
+                    }, 4000);
+                }
+            }
+        }
+    }
 
     function check_replacement(elem, src, no_retry) {
         if (!src || src.indexOf("javascript:") == 0) {
@@ -175,19 +254,12 @@ __wbvidrw = (function() {
 
         src = src.replace(VIMEO_RX, "http://player.vimeo.com/video/$1");
 
-        if (vid_type == "orig") {
-            var repl_src = src.replace(YT_RX, "$1/embed/$2?$3&controls=0");
+        if (_pywbvid == "orig") {
+            var repl_src = src.replace(YT_V_RX, "$1/embed/$2?$3&controls=0");
             if (repl_src != src) {
                 do_replace_iframe(elem, repl_src);
                 return;
             }
-        }
-
-        if (window.yt) {
-            delete window.yt;
-        }
-        if (window.ytplayer) {
-            delete window.ytplayer;
         }
         // end special cases
 
@@ -257,8 +329,8 @@ __wbvidrw = (function() {
 
             elem.parentNode.replaceChild(replacement, elem);
 
-        } else if (tag_name == "video") {
-            elem.parentNode.replaceChild(replacement, elem);
+        } else {
+           elem.parentNode.replaceChild(replacement, elem);
         }
     }
 
@@ -294,7 +366,7 @@ __wbvidrw = (function() {
                 if (type == "audio") {
                     htmlelem = document.createElement("audio");
                 }
-                if (vid_type != "flash") {
+                if (_pywbvid != "flash") {
                     replacement = init_html_player(htmlelem, type, width, height, info, thumb_url);
                 }
             }
@@ -316,6 +388,14 @@ __wbvidrw = (function() {
         }
     }
 
+    function get_format_ext(info_format) {
+        if (info_format.ext == "unknown_video") {
+            return info_format.format_id;
+        } else {
+            return info_format.ext;
+        }
+    }
+
     function can_play_video_or_audio(elem, info) {
         var types = ["video", "audio"];
         var type = undefined;
@@ -330,7 +410,9 @@ __wbvidrw = (function() {
             }
 
             for (var j = 0; j < types.length; j++) {
-                if (can_play(elem, info.formats[i].ext, types[j])) {
+                var ext = get_format_ext(info.formats[i]);
+
+                if (can_play(elem, ext, types[j])) {
                     info.formats[i]._wb_canPlay = true;
                     info._wb_avail++;
                     type = types[j];
@@ -371,7 +453,6 @@ __wbvidrw = (function() {
                 return;
             }
 
-            //console.log("html5 " + type +" error");
             var replacement = document.createElement("div");
 
             var vidId = "_wb_vid" + Date.now();
@@ -389,13 +470,13 @@ __wbvidrw = (function() {
 
             if (i < 0) {
                 url = info.url;
-                format = info.ext;
+                format = get_format_ext(info);
             } else {
-                url = info.formats[i].url;
-                format = info.formats[i].ext;
                 if (!info.formats[i]._wb_canPlay) {
                     continue;
                 }
+                url = info.formats[i].url;
+                format = get_format_ext(info.formats[i]);
             }
 
             url = wbinfo.prefix + url;
