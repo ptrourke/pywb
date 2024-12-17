@@ -76,7 +76,17 @@
               :title="(showTimelineView ? _('Hide timeline') : _('Show timeline'))">
               <i class="far fa-chart-bar"></i>
             </button>
-          </li>
+          </li><!-- lc customization -->
+           <li class="nav-item">
+             <button
+               class="btn btn-sm"
+               :class="{'btn-outline-light': lightButtons, 'btn-outline-dark': !lightButtons}"
+               :title="_('Ask a Librarian')"
+               @click="askLibrarian">
+               <i class="fa fa-question"></i>
+             </button>
+           </li><!-- end lc customization -->
+
           <li class="nav-item">
             <button
               class="btn btn-sm"
@@ -122,7 +132,7 @@
       <span class="hidden" v-if="!currentSnapshot">&nbsp;</span>
       <span v-if="currentSnapshot">
         <span class="strong mr-1">
-          {{_('Current Capture')}}: 
+          {{_('Current Capture')}}:
           <span class="ml-1" v-if="config.title">
             {{ config.title }}
           </span>
@@ -152,7 +162,7 @@
             ></Timeline>
           </div>
         </div>
-      </div>    
+      </div>
     </div>
 
     <!-- Calendar -->
@@ -165,7 +175,7 @@
         </CalendarYear>
       </div>
     </div>
-    
+
   </div>
 </template>
 
@@ -254,7 +264,10 @@ export default {
   methods: {
     _(id, embeddedVariableStrings=null) {
       return PywbI18N.instance.getText(id, embeddedVariableStrings);
-    },
+    }, // <!-- lc customization -->
+    askLibrarian: function () {
+      window.open("https://ask.loc.gov", "_blank");
+    }, // <!-- end lc customization -->
     gotoPeriod: function(newPeriod, onlyZoomToPeriod) {
       if (this.timelineHighlight) {
         setTimeout((() => {
@@ -389,7 +402,7 @@ export default {
 
 <style>
   body {
-    padding-top: 89px !important;
+    padding-top: 150px !important;
   }
   .app {
     font-family: Calibri, Arial, sans-serif;
@@ -419,10 +432,10 @@ export default {
     margin: .25rem !important;
   }
   #logo-img {
-    max-height: 40px;
+    max-height: 90px;
   }
   .title-nav {
-    margin-top: 50px;
+    margin-top: 110px;
     z-index: 80;
   }
   #secondNavbar {
